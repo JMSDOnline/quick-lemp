@@ -1,5 +1,6 @@
 #!/bin/bash
-IPADDRESS1=`ifconfig | sed -n 's/.*inet addr:\([0-9.]\+\)\s.*/\1/p' | grep -v 127 | head -n 1`
+server_ip="ifconfig | sed -n 's/.*inet addr:\([0-9.]\+\)\s.*/\1/p' | grep -v 127 | head -n 1"
+sitename="hostname -s"
 
 echo '[quick-lemp] LEMP Stack Installation'
 echo 'Configured for Ubuntu 14.04.'
@@ -70,7 +71,7 @@ $conf1
   server_name _;
 
 $conf2
-  root /srv/www/lempsample/public;
+  root /srv/www/$sitename/public;
 
   charset utf-8;
 
@@ -81,7 +82,7 @@ $conf2
   location = /robots.txt { allow all; log_not_found off; access_log off; }
 
   location ^~ /static/ {
-    alias /srv/www/lempsample/app/static;
+    alias /srv/www/$sitename/app/static;
   }
 
   location ~ \\.php\$ {
@@ -92,29 +93,29 @@ $conf2
     include fastcgi_params;
   }
 
-  location / { try_files \$uri @lempsample; }
+  location / { try_files \$uri @$sitename; }
 
-  location @lempsample {
+  location @$sitename {
     include uwsgi_params;
-    uwsgi_pass unix:/tmp/lempsample.sock;
+    uwsgi_pass unix:/tmp/$sitename.sock;
   }
-}" > /etc/nginx/sites-available/lempsample
+}" > /etc/nginx/sites-available/$sitename
 
-mkdir -p /srv/www/lempsample/app/static
-mkdir -p /srv/www/lempsample/app/templates
-mkdir -p /srv/www/lempsample/public
-ln -s /etc/nginx/sites-available/lempsample /etc/nginx/sites-enabled/lempsample
+mkdir -p /srv/www/$sitename/app/static
+mkdir -p /srv/www/$sitename/app/templates
+mkdir -p /srv/www/$sitename/public
+ln -s /etc/nginx/sites-available/$sitename /etc/nginx/sites-enabled/$sitename
 
 # Varnish
 echo -e '\n[Varnish]'
 apt-get install varnish
-sed -i "s/127.0.0.1/$IPADDRESS1/" /etc/varnish/default.vcl
+sed -i "s/127.0.0.1/$server_ip/" /etc/varnish/default.vcl
 sed -i "s/6081/80/" /etc/default/varnish
 
 # PHP
 echo -e '\n[PHP-FPM]'
 apt-get -y install php5-common php5-mysqlnd php5-curl php5-gd php5-cli php5-fpm php-pear php5-dev php5-imap php5-mcrypt
-echo '<?php phpinfo(); ?>' > /srv/www/lempsample/public/checkinfo.php
+echo '<?php phpinfo(); ?>' > /srv/www/$sitename/public/checkinfo.php
 
 
 # uWSGI
@@ -127,17 +128,17 @@ start on runlevel [2345]
 stop on runlevel [06]
 exec uwsgi --die-on-term --emperor /etc/uwsgi --logto /var/log/uwsgi/uwsgi.log' > /etc/init/uwsgi-emperor.conf
 echo '[uwsgi]
-chdir = /srv/www/lempsample
-logto = /var/log/uwsgi/lempsample.log
-virtualenv = /srv/www/lempsample/venv
-socket = /tmp/lempsample.sock
+chdir = /srv/www/$sitename
+logto = /var/log/uwsgi/$sitename.log
+virtualenv = /srv/www/$sitename/venv
+socket = /tmp/$sitename.sock
 uid = www-data
 gid = www-data
 master = true
 wsgi-file = wsgi.py
 callable = app
-vacuum = true' > /etc/uwsgi/lempsample.ini
-tee -a /srv/www/lempsample/wsgi.py > /dev/null <<EOF
+vacuum = true' > /etc/uwsgi/$sitename.ini
+tee -a /srv/www/$sitename/wsgi.py > /dev/null <<EOF
 from flask import Flask
 
 app = Flask(__name__)
@@ -151,7 +152,7 @@ EOF
 # virtualenv
 echo -e '\n[virtualenv]'
 pip install virtualenv
-cd /srv/www/lempsample
+cd /srv/www/$sitename
 virtualenv venv
 source venv/bin/activate
 pip install flask
@@ -170,6 +171,7 @@ apt-get -q -y install mariadb-server
 echo
 start uwsgi-emperor
 service nginx restart
+service varnish restart
 service php5-fpm restart
 echo
 echo '[quick-lemp] LEMP Stack Installation Complete'
